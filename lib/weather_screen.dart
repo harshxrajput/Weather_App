@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:weather_app/drawer.dart';
 import 'package:weather_app/secrets.dart';
 import 'additional_info.dart';
 import 'weather_forecast.dart';
@@ -82,6 +83,7 @@ class _WeatherscreenState extends State<Weatherscreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawer: drawerclass(),
       appBar: AppBar(
         title: const Text(
           "Weather App",
