@@ -12,6 +12,7 @@ class ForecastItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: Colors.white.withOpacity(0.3),
       child: Container(
         width: 100,
         child: Padding(

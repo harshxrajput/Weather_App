@@ -13,6 +13,7 @@ class AdditionalInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return  Card(
+      color: Colors.white.withOpacity(0.3),
       child: Container(
         width: 150,
         child: Padding(
@@ -21,9 +22,9 @@ class AdditionalInfo extends StatelessWidget {
             children: [
               Icon(icon ,size: 35,),
               const SizedBox(height: 10),
-              Text(label,style: TextStyle(fontSize: 20),),
+              Text(label,style: TextStyle(fontSize: 20,fontWeight: FontWeight.bold),),
               const SizedBox(height: 10,),
-              Text(value,style: TextStyle(fontSize: 16),),
+              Text(value,style: TextStyle(fontSize: 16,fontWeight: FontWeight.w500),),
             ],
           ),
         ),
