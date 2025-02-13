@@ -27,11 +27,11 @@ class _WeatherscreenState extends State<Weatherscreen> {
       );
       final data = jsonDecode(result.body);
       if (data["cod"] != "200") {
-        throw data["message"]; // Throw an error if the city is not found
+        throw data["message"];
       }
       return data;
     } catch (e) {
-      throw e.toString(); // Rethrow the error for handling in the UI
+      throw e.toString();
     }
   }
 
@@ -92,38 +92,11 @@ class _WeatherscreenState extends State<Weatherscreen> {
                         'Search',
                         style: TextStyle(color: Colors.black54),
                       ),
-                      onPressed: () async {
-                        Navigator.of(context).pop(); // Close the search dialog
-                        try {
-                          // Validate the city name by fetching weather data
-                          final result = await http.get(
-                            Uri.parse(
-                              "https://api.openweathermap.org/data/2.5/forecast?q=$userInput&APPID=$openWeatherAPIKEY",
-                            ),
-                          );
-                          final data = jsonDecode(result.body);
-                          if (data["cod"] != "200") {
-                            throw data["message"];
-                          }
-                          setState(() {
-                            CityName = userInput; // Update the city name
-                          });
-                        } catch (e) {
-                          // Show a SnackBar at the top of the screen
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text("City not found: $userInput"),
-                              duration: Duration(seconds: 8), // Lasts for 3 seconds
-                              behavior: SnackBarBehavior.floating, // Floating behavior
-                              margin: EdgeInsets.only(
-                                top: MediaQuery.of(context).padding.top + 10, // Position at the top
-                                left: 10,
-                                right: 10,
-                              ),
-                              backgroundColor: Colors.red, // Optional: Customize color
-                            ),
-                          );
-                        }
+                      onPressed: () {
+                        setState(() {
+                          CityName = userInput;
+                        });
+                        Navigator.of(context).pop();
                       },
                     ),
                   ],
@@ -145,167 +118,129 @@ class _WeatherscreenState extends State<Weatherscreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder(
-      future: getCurrentWeather(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
-            body: Center(child: CircularProgressIndicator.adaptive()),
-          );
-        }
-        if (snapshot.hasError) {
-          // Display a friendly error message with a reset button
-          return Scaffold(
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "City not found: $CityName",
-                    style: TextStyle(fontSize: 18, color: Colors.red),
+    return Scaffold(
+      backgroundColor: Colors.transparent, // Ensure no default background color
+      extendBodyBehindAppBar: true, // Extend the body behind the AppBar
+      drawer: drawerclass(),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          setState(() {}); // Trigger a refresh by calling setState
+        },
+        child: FutureBuilder(
+          future: getCurrentWeather(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator.adaptive());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text(snapshot.error.toString()));
+            }
+            final data = snapshot.data!;
+            final currentWeatherData = data["list"][0];
+            final currentSky = currentWeatherData["weather"][0]["main"];
+            final isNight = isNightTime();
+
+            return Stack(
+              children: [
+                // Background Image
+                Container(
+                  decoration: BackgroundHelper.getWeatherBackground(currentSky),
+                ),
+                // Nighttime Overlay
+                if (isNight)
+                  ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                      child: Container(
+                        color: Colors.black.withOpacity(0.5), // Reduce brightness
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        CityName = "Bhubaneswar"; // Reset to default city
-                      });
-                    },
-                    child: Text("Go Back to Default City"),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        final data = snapshot.data!;
-        final currentWeatherData = data["list"][0];
-        final currentSky = currentWeatherData["weather"][0]["main"];
-        // Check if it's nighttime
-        final isNight = isNightTime();
-        return Scaffold(
-          backgroundColor: Colors.transparent, // Ensure no default background color
-          extendBodyBehindAppBar: true, // Extend the body behind the AppBar
-          appBar: AppBar(
-            backgroundColor: Colors.transparent, // Transparent AppBar
-            elevation: 0, // Remove shadow
-            title: const Text(
-              "Weather App",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.white, // Ensure text is visible on the image
-              ),
-            ),
-            actions: [
-              IconButton(
-                onPressed: () {
-                  setState(() {});
-                },
-                tooltip: "Refresh",
-                icon: Icon(Icons.refresh, color: Colors.white),
-              ),
-            ],
-            centerTitle: true,
-          ),
-          drawer: drawerclass(),
-          body: Stack(
-            children: [
-              // Background Image
-              Container(
-                decoration: BackgroundHelper.getWeatherBackground(currentSky),
-              ),
-              // Nighttime Overlay
-              if (isNight)
-                ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                    child: Container(
-                      color: Colors.black.withOpacity(0.5), // Reduce brightness
+                // Content
+                Padding(
+                  padding: const EdgeInsets.all(15.0),
+                  child: SingleChildScrollView(
+                    physics: AlwaysScrollableScrollPhysics(), // Enable scrolling
+                    child: Column(
+                      children: [
+                        // Add some vertical spacing for the status bar
+                        SizedBox(height: MediaQuery.of(context).padding.top + 20),
+                        // Main Weather Card
+                        SizedBox(
+                          width: 300, // Fixed width
+                          height: 250, // Fixed height
+                          child: WeatherCard(
+                            cityName: data["city"]["name"],
+                            temperature: (currentWeatherData["main"]["temp"] - 273.15).round(),
+                            weatherCondition: currentSky,
+                            onSearchCity: _searchCity,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Weather Forecast
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: const Text(
+                            "Weather Forecast",
+                            style: TextStyle(
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white, // Ensure text is visible
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 120,
+                          child: ListView.builder(
+                            itemCount: data["list"].length > 9 ? 9 : data["list"].length - 1,
+                            scrollDirection: Axis.horizontal,
+                            itemBuilder: (context, index) {
+                              final hourlyforecast = data["list"][index + 1];
+                              final hourlysky = data["list"][index + 1]["weather"][0]["main"];
+                              final hourlytemp =
+                              (data["list"][index + 1]["main"]["temp"] - 273.15).round();
+                              final time = DateTime.parse(hourlyforecast["dt_txt"]);
+                              return ForecastItem(
+                                time: DateFormat.j().format(time),
+                                icon: getWeatherIcon(hourlysky),
+                                temp: hourlytemp.toString(),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // Additional Information
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: const Text(
+                            "Additional Information",
+                            style: TextStyle(
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white, // Ensure text is visible
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        AdditionalInfoSection(
+                          windSpeed: "${currentWeatherData["wind"]["speed"]} km/h",
+                          feelsLike:
+                          "${(currentWeatherData["main"]["feels_like"] - 273.15).round()}° C",
+                          visibility: "${currentWeatherData["visibility"]} m",
+                          gust: currentWeatherData["wind"]["gust"].toString(),
+                          humidity: "${currentWeatherData["main"]["humidity"]}%",
+                          pressure: "${currentWeatherData["main"]["pressure"]} hPa",
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              // Content
-              Padding(
-                padding: const EdgeInsets.all(15.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Add some vertical spacing for the AppBar
-                      SizedBox(height: MediaQuery.of(context).padding.top + kToolbarHeight),
-                      // Main Weather Card
-                      SizedBox(
-                        width: 300, // Fixed width
-                        height: 250, // Fixed height
-                        child: WeatherCard(
-                          cityName: data["city"]["name"],
-                          temperature: (currentWeatherData["main"]["temp"] - 273.15).round(),
-                          weatherCondition: currentSky,
-                          onSearchCity: _searchCity,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Weather Forecast
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: const Text(
-                          "Weather Forecast",
-                          style: TextStyle(
-                            fontSize: 25,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white, // Ensure text is visible
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 120,
-                        child: ListView.builder(
-                          itemCount: data["list"].length > 9 ? 9 : data["list"].length - 1,
-                          scrollDirection: Axis.horizontal,
-                          itemBuilder: (context, index) {
-                            final hourlyforecast = data["list"][index + 1];
-                            final hourlysky = data["list"][index + 1]["weather"][0]["main"];
-                            final hourlytemp =
-                            (data["list"][index + 1]["main"]["temp"] - 273.15).round();
-                            final time = DateTime.parse(hourlyforecast["dt_txt"]);
-                            return ForecastItem(
-                              time: DateFormat.j().format(time),
-                              icon: getWeatherIcon(hourlysky),
-                              temp: hourlytemp.toString(),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      // Additional Information
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: const Text(
-                          "Additional Information",
-                          style: TextStyle(
-                            fontSize: 25,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white, // Ensure text is visible
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      AdditionalInfoSection(
-                        windSpeed: "${currentWeatherData["wind"]["speed"]} km/h",
-                        feelsLike: "${(currentWeatherData["main"]["feels_like"] - 273.15).round()}° C",
-                        visibility: "${currentWeatherData["visibility"]} m",
-                        gust: currentWeatherData["wind"]["gust"].toString(),
-                        humidity: "${currentWeatherData["main"]["humidity"]}%",
-                        pressure: "${currentWeatherData["main"]["pressure"]} hPa",
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -337,6 +272,7 @@ class _WeatherscreenState extends State<Weatherscreen> {
     }
   }
 }
+
 
 class AdditionalInfoSection extends StatelessWidget {
   final String windSpeed;
