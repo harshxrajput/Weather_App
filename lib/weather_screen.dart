@@ -2,38 +2,99 @@ import 'dart:convert';
 import 'dart:ui';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:weather_app/drawer.dart';
 import 'package:weather_app/secrets.dart';
 import 'additional_info.dart';
 import 'weather_forecast.dart';
 import 'background_helper.dart'; // Import the background helper
 import 'package:http/http.dart' as http;
-
-class Weatherscreen extends StatefulWidget {
-  const Weatherscreen({super.key});
-
-  @override
-  State createState() => _WeatherscreenState();
-}
+import 'air_quality_widget.dart';
 
 class _WeatherscreenState extends State<Weatherscreen> {
-  String CityName = "Bhubaneswar"; // Default city
+  late String CityName; // Use the default city passed from the previous screen
+  int aqi = 0; // Default AQI
+
+
+  @override
+  void initState() {
+    super.initState();
+    CityName = widget.defaultCity; // Set initial city
+    loadWeatherAndAirQuality();    // Fetch AQI on startup
+  }
+
+
+
 
   Future<Map<String, dynamic>> getCurrentWeather() async {
     try {
       final result = await http.get(
         Uri.parse(
-            "https://api.openweathermap.org/data/2.5/forecast?q=$CityName&APPID=$openWeatherAPIKEY"),
+          "https://api.openweathermap.org/data/2.5/forecast?q=$CityName&APPID=$openWeatherAPIKEY",
+        ),
       );
       final data = jsonDecode(result.body);
+
       if (data["cod"] != "200") {
         throw data["message"];
       }
+
+      // Extract and print lat/lon for debugging
+      double lat = data["city"]["coord"]["lat"];
+      double lon = data["city"]["coord"]["lon"];
+      print("Weather Data Fetched for $CityName: lat=$lat, lon=$lon");
+
       return data;
     } catch (e) {
-      throw e.toString();
+      throw "Error fetching weather: $e";
     }
   }
+
+
+  Future<Map<String, dynamic>> getAirQualityData(double lat, double lon) async {
+    try {
+      final result = await http.get(
+        Uri.parse(
+          "https://api.openweathermap.org/data/2.5/air_pollution?lat=$lat&lon=$lon&appid=$openWeatherAPIKEY",
+        ),
+      );
+      final data = jsonDecode(result.body);
+
+      if (data.containsKey("list") && data["list"].isNotEmpty) {
+        return data;
+      } else {
+        throw "Invalid air quality data";
+      }
+    } catch (e) {
+      throw "Error fetching AQI: $e";
+    }
+  }
+
+
+
+  Future<void> loadWeatherAndAirQuality() async {
+    try {
+      // Fetch weather and extract city coordinates
+      final weatherData = await getCurrentWeather();
+      double lat = weatherData["city"]["coord"]["lat"];
+      double lon = weatherData["city"]["coord"]["lon"];
+
+      // Fetch AQI for the searched city
+      final airQualityData = await getAirQualityData(lat, lon);
+      int newAqi = airQualityData["list"][0]["main"]["aqi"];
+
+      print("Weather and AQI fetched for $CityName: AQI = $newAqi"); // Debugging
+
+      // Update UI once with all new data
+      setState(() {
+        aqi = newAqi;
+      });
+
+    } catch (e) {
+      print("Error loading weather and AQI: $e");
+    }
+  }
+
 
   void _searchCity() {
     showDialog(
@@ -97,6 +158,9 @@ class _WeatherscreenState extends State<Weatherscreen> {
                           CityName = userInput;
                         });
                         Navigator.of(context).pop();
+
+                        // Fetch new weather and AQI for the searched city
+                        loadWeatherAndAirQuality();
                       },
                     ),
                   ],
@@ -109,38 +173,41 @@ class _WeatherscreenState extends State<Weatherscreen> {
     );
   }
 
+
+
   bool isNightTime() {
     final now = DateTime.now();
     final hour = now.hour;
-    // Define daytime as 6:00 AM to 6:00 PM
     return hour < 6 || hour >= 18;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent, // Ensure no default background color
-      extendBodyBehindAppBar: true, // Extend the body behind the AppBar
-      drawer: drawerclass(),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          setState(() {}); // Trigger a refresh by calling setState
-        },
-        child: FutureBuilder(
-          future: getCurrentWeather(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator.adaptive());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text(snapshot.error.toString()));
-            }
-            final data = snapshot.data!;
-            final currentWeatherData = data["list"][0];
-            final currentSky = currentWeatherData["weather"][0]["main"];
-            final isNight = isNightTime();
-
-            return Stack(
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {}); // Trigger a refresh by calling setState
+      },
+      child: FutureBuilder(
+        future: getCurrentWeather(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Scaffold(
+              body: Center(child: CircularProgressIndicator.adaptive()),
+            );
+          }
+          if (snapshot.hasError) {
+            return Scaffold(
+              body: Center(child: Text(snapshot.error.toString())),
+            );
+          }
+          final data = snapshot.data!;
+          final currentWeatherData = data["list"][0];
+          final currentSky = currentWeatherData["weather"][0]["main"];
+          final isNight = isNightTime();
+          return Scaffold(
+            backgroundColor: Colors.transparent,
+            extendBodyBehindAppBar: true,
+            body: Stack(
               children: [
                 // Background Image
                 Container(
@@ -167,8 +234,8 @@ class _WeatherscreenState extends State<Weatherscreen> {
                         SizedBox(height: MediaQuery.of(context).padding.top + 20),
                         // Main Weather Card
                         SizedBox(
-                          width: 300, // Fixed width
-                          height: 250, // Fixed height
+                          width: 300,
+                          height: 250,
                           child: WeatherCard(
                             cityName: data["city"]["name"],
                             temperature: (currentWeatherData["main"]["temp"] - 273.15).round(),
@@ -178,6 +245,22 @@ class _WeatherscreenState extends State<Weatherscreen> {
                         ),
                         const SizedBox(height: 20),
                         // Weather Forecast
+                        // Add this below the "Additional Information" section
+
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            "Air Quality",
+                            style: TextStyle(
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        AirQualityWidget(aqi: aqi),
+                        const SizedBox(height: 20,),
                         Align(
                           alignment: Alignment.centerLeft,
                           child: const Text(
@@ -185,7 +268,7 @@ class _WeatherscreenState extends State<Weatherscreen> {
                             style: TextStyle(
                               fontSize: 25,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white, // Ensure text is visible
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -218,7 +301,7 @@ class _WeatherscreenState extends State<Weatherscreen> {
                             style: TextStyle(
                               fontSize: 25,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white, // Ensure text is visible
+                              color: Colors.white,
                             ),
                           ),
                         ),
@@ -237,14 +320,13 @@ class _WeatherscreenState extends State<Weatherscreen> {
                   ),
                 ),
               ],
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  // Function to return an appropriate weather icon
   IconData getWeatherIcon(String condition) {
     switch (condition) {
       case "Thunderstorm":
@@ -273,57 +355,15 @@ class _WeatherscreenState extends State<Weatherscreen> {
   }
 }
 
-
-class AdditionalInfoSection extends StatelessWidget {
-  final String windSpeed;
-  final String feelsLike;
-  final String visibility;
-  final String gust;
-  final String humidity;
-  final String pressure;
-
-  const AdditionalInfoSection({
-    super.key,
-    required this.windSpeed,
-    required this.feelsLike,
-    required this.visibility,
-    required this.gust,
-    required this.humidity,
-    required this.pressure,
-  });
+class Weatherscreen extends StatefulWidget {
+  final String defaultCity; // Accept the default city as a parameter
+  const Weatherscreen({super.key, required this.defaultCity});
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            AdditionalInfo(icon: Icons.wind_power, label: "Wind Speed", value: windSpeed),
-            AdditionalInfo(icon: Icons.thermostat, label: "Feels Like", value: feelsLike),
-          ],
-        ),
-        const SizedBox(height: 25),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            AdditionalInfo(icon: Icons.visibility, label: "Visibility", value: visibility),
-            AdditionalInfo(icon: Icons.air, label: "Gust", value: gust),
-          ],
-        ),
-        const SizedBox(height: 25),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            AdditionalInfo(icon: Icons.water_drop_outlined, label: "Humidity", value: humidity),
-            AdditionalInfo(icon: Icons.beach_access, label: "Pressure", value: pressure),
-          ],
-        ),
-      ],
-    );
-  }
+  State<Weatherscreen> createState() => _WeatherscreenState();
 }
 
+// Weather Card Widget
 class WeatherCard extends StatelessWidget {
   final String cityName;
   final int temperature;
@@ -406,5 +446,56 @@ class WeatherCard extends StatelessWidget {
       default:
         return Icons.error;
     }
+  }
+}
+
+// Additional Information Section
+class AdditionalInfoSection extends StatelessWidget {
+  final String windSpeed;
+  final String feelsLike;
+  final String visibility;
+  final String gust;
+  final String humidity;
+  final String pressure;
+
+  const AdditionalInfoSection({
+    super.key,
+    required this.windSpeed,
+    required this.feelsLike,
+    required this.visibility,
+    required this.gust,
+    required this.humidity,
+    required this.pressure,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            AdditionalInfo(icon: Icons.wind_power, label: "Wind Speed", value: windSpeed),
+            AdditionalInfo(icon: Icons.thermostat, label: "Feels Like", value: feelsLike),
+          ],
+        ),
+        const SizedBox(height: 25),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            AdditionalInfo(icon: Icons.visibility, label: "Visibility", value: visibility),
+            AdditionalInfo(icon: Icons.air, label: "Gust", value: gust),
+          ],
+        ),
+        const SizedBox(height: 25),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            AdditionalInfo(icon: Icons.water_drop_outlined, label: "Humidity", value: humidity),
+            AdditionalInfo(icon: Icons.beach_access, label: "Pressure", value: pressure),
+          ],
+        ),
+      ],
+    );
   }
 }
